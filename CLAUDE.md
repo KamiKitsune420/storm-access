@@ -83,15 +83,38 @@ gets translated. To pick out "the focused item" from that noise:
    acquired). Deduped on consecutive identical text. Find their ids in the debug
    log's `(popup?)` lines (popup capture logs any text decoded OUTSIDE the nav
    window, once per id per session, risky families excluded).
-12. **Character-select context** — character grid / jutsu-customization re-decode
-   the hovered fighter's signature jutsu (`c_jyu_*`/`c_ult_*`/`c_cha_*`/
-   `c_costume_*`/`c_union_*`, in `CHARSELECT_INFO_PREFIXES`), but those SAME ids
-   flood during real battles. So they only speak while `g_charSelectUntil` is
-   fresh, set (8 s window) when a selection-only marker decodes (`MSG_Random`,
-   `characterselect*`, `c_sta`). The window is shorter than a battle load, and
-   c_jyu does NOT self-refresh it, so any leak into a fight is bounded to ~8 s and
-   in practice expires during the load. Character NAMES are portrait graphics
-   (not text), so the signature jutsu is the spoken identifier.
+12. **Character-select fighter NAMING** (rewritten) — the fighter's NAME is a
+   portrait graphic (never decoded). On each hover the info panel decodes the
+   fighter's signature (`c_jyu_*`/`c_com_*`), ultimate (`c_ult_*`), and form tag
+   (`c_cha_*`/`c_costume_*`). We map those ids to a character NAME via `CHAR_NAMES[]`
+   in `Accessibility.cpp` and speak e.g. "Sasuke Uchiha, Rinne Sharingan".
+   - **Key on the ULTIMATE** (unique per fighter). Signatures are a fallback and
+     are only mapped when unique — several are SHARED and are deliberately NOT in
+     the table (Rasengan = Naruto/Minato, Fire Ball = Itachi/Sasukes, Water Dragon
+     = Zabuza/Suigetsu, Chidori = Sasuke/Kakashi). An unmapped fighter speaks its
+     signature jutsu rather than a wrong name.
+   - One hover's ids are **buffered** (`g_pc*` under `g_charMtx`) and spoken once
+     via `FlushChar()` — on the form tag, the next hover's signature, or a 160 ms
+     timeout in `Update()`. Multiple signatures of one hover are merged
+     (`CHAR_SAME_HOVER_MS`) so e.g. Chakra-Mode Naruto doesn't blurt "Rasengan".
+   - **Fighter vs jutsu-list:** a real fighter hover decodes an ULTIMATE (or a form
+     tag); the jutsu-CUSTOMIZATION screen decodes bare signatures with none. So
+     "ultimate OR form tag present" ⇒ speak the name; otherwise ⇒ speak the jutsu
+     (this preserves the customization screen). Chakra-Mode Naruto decodes NO
+     ultimate, so the form tag is what marks it a fighter.
+   - **Context** (`g_charSelectUntil`, 6 s) now self-refreshes on ANY char-select
+     info id (not just sparse markers) — that fixed the old bug where it expired
+     mid-navigation and went silent. Refresh runs before the announce block, so a
+     decode after an expiry re-opens the context AND is still announced.
+   - **Battle-leak gate:** `league_*` ("Battle") decodes at fight start → sets
+     `g_inBattle` (suppresses ALL char-select speech, zeroes the context);
+     `characterselect_*`/`MSG_Random` clear it on return to the grid. This stops
+     in-fight jutsu-use decodes (lone `c_jyu`) from being spoken.
+   - Name style is full/clan ("Naruto Uzumaki", "Kaguya Otsutsuki"); title-only
+     characters stay as titles ("Third Raikage"). The id→character map, the full
+     108 roster, shared-signature gotchas, and still-unknown ids live in
+     **`CHARACTER_JUTSU_MAP.md`** — extend the table from debug logs (decode the
+     jutsu TEXT, prefer the ultimate).
 
 ## Build
 
@@ -173,13 +196,17 @@ To disable the mod for an A/B test: rename game-root `xinput9_1_0.dll` →
 
 Working: main menu, story chapter/episode list, free battle, options, online,
 collection, Boruto/Adventure hub (reads descriptions), confirmation dialog
-*questions*, practice/pause menu (`battlestartmenu_*`), character grid (speaks
-the hovered fighter's signature jutsu as the identifier — names are graphics),
-jutsu/Ninjutsu customization list, stage select (`c_sta_*`/`map_icon_*`),
-autosave-notice popup (`MSG_AutoSaveWarn`, speaks unprompted).
+*questions*, practice/pause menu (`battlestartmenu_*`), **character select — speaks
+the hovered fighter's real NAME + form** (id→character table, ~75 of 108 mapped;
+see item 12 and `CHARACTER_JUTSU_MAP.md`), jutsu/Ninjutsu customization list, stage
+select (`c_sta_*`/`map_icon_*`), autosave-notice popup (`MSG_AutoSaveWarn`, speaks
+unprompted). Battles stay quiet (the `league_*` battle-leak gate is confirmed).
 
 Known gaps:
-- yes/no selection movement (decode-once) — still the biggest one.
+- Character NAMING is ~70% done; remaining fighters just need to appear in a debug
+  log so their ultimate id can be mapped. A few unknowns are listed in
+  `CHARACTER_JUTSU_MAP.md` ("Perfume Spray" kunoichi, child Obito vs child Sasuke).
+- yes/no selection movement (decode-once) — still open.
 - Login-bonus / item-acquired popups: mechanism is built (`POPUP_PREFIXES`) but
   ids not yet captured (need a `(popup?)` log line while one is on screen).
 - Battle result screen (`battleresult_*`, "Check Acquired Items") — risky-blocked.
@@ -219,5 +246,15 @@ repeating the **Install** steps in that copy's root. Notes:
 - `ns4moddingapi/d3dcompiler_47_og/HookFunctions.cpp` — `InitializeHooks`
   (content hooks disabled here).
 - `ns4moddingapi/d3dcompiler_47_og/NS4Framework.cpp` — Init/Update wiring.
+- `storm access/CHARACTER_JUTSU_MAP.md` — id→character map, full roster, and the
+  still-unknown ids for character-select naming (see item 12).
 - `storm access/lib/` — Tolk.dll, nvdaControllerClient64.dll, SAAPI64.dll.
 - `storm_access.log` (game root, runtime) — debug log.
+
+## GitHub
+
+Public repo: https://github.com/KamiKitsune420/storm-access (branch `main`). We
+develop in the Steam game-folder working copy; the git repo is a separate copy at
+`C:\Users\adels\Documents\GitHub\storm access`. To push: copy changed files from
+the working copy into the repo copy, then commit + push there. `.gitignore`
+excludes the Ghidra project (`gidra proj/`), build outputs, and logs.
