@@ -1,0 +1,23 @@
+# Ghidra reverse-engineering project (huge local workspace, not source)
+gidra proj/
+
+# Runtime logs
+logs/
+*.log
+storm_access.log
+
+# Visual Studio / MSBuild build outputs
+x64/
+Debug/
+Release/
+.vs/
+*.obj
+*.pdb
+*.ipdb
+*.iobj
+*.ipch
+*.tlog
+*.idb
+*.exp
+*.lastbuildstate
+*.log
